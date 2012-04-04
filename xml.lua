@@ -60,10 +60,13 @@ function newParser()
 	
 	function XmlParser:ParseXmlText(xmlText)
 	  local stack = {}
-	  local top = {name=nil,value=nil,properties={},child={}}
+	  local namespace = {}
+	  local labelNamespace = nil
+	  local top = {name=nil,value=nil,properties={},child={}, namespace=nil}
 	  table.insert(stack, top)
 	  local ni,c,label,xarg, empty
 	  local i, j = 1, 1
+	  local namespaceIndex = 1
 	  while true do
 		ni,j,c,label,xarg, empty = string.find(xmlText, "<(%/?)([%w:]+)(.-)(%/?)>", i)
 		if not ni then break end
@@ -71,10 +74,34 @@ function newParser()
 		if not string.find(text, "^%s*$") then
 		  top.value=(top.value or "")..self:FromXmlString(text);
 		end
+		namespaceIndex = 1
+		while true do
+		  	namespaceIndex = string.find(xarg, "xmlns:", namespaceIndex)
+			if not namespaceIndex then break end
+			local equalSign = string.find(xarg, "=", namespaceIndex)
+			local nsName = string.sub(xarg, namespaceIndex + 6, equalSign -1)
+			local endNS = string.find(xarg, "\" ", equalSign + 2)
+			namespace[nsName] = string.sub(xarg, equalSign + 1, endNS + 1)
+			-- print("Name space: " .. nsName .. ":" ..namespace[nsName])
+			namespaceIndex = equalSign
+		end
+		-- ditch name space
+		if label then
+			local matchcount = 0
+			-- walk through our namespace table nuking it as we go
+			for k in pairs(namespace) do
+				label, matchcount = string.gsub(label, k..":", "");
+				if matchcount >= 1 then
+					labelNamespace = k
+				else
+					labelNamespace = nil
+				end
+			end
+		end
 		if empty == "/" then  -- empty element tag
 		  table.insert(top.child, {name=label,value=nil,properties=self:ParseArgs(xarg),child={}})
 		elseif c == "" then   -- start tag
-		  top = {name=label, value=nil, properties=self:ParseArgs(xarg), child={}}
+		  top = {name=label, value=nil, properties=self:ParseArgs(xarg), child={}, namespace=labelNamespace}
 		  table.insert(stack, top)   -- new level
 		else  -- end tag
 		  local toclose = table.remove(stack)  -- remove top
@@ -96,6 +123,7 @@ function newParser()
 	  if #stack > 1 then
 		error("XmlParser: unclosed "..stack[stack.n].name)
 	  end
+	  stack[1].child[1].namespace = namespace
 	  return stack[1].child[1];
 	end
 	
